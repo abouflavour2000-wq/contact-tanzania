@@ -1,9 +1,13 @@
 import { NextRequest, NextResponse } from "next/server";
-import { supabaseAdmin } from "@/lib/supabaseAdmin";
+import { getSupabaseAdmin } from "@/lib/supabaseAdmin";
 import { requireAdmin } from "@/lib/adminAuth";
+
 export const dynamic = "force-dynamic";
+
 export async function GET(req: NextRequest) {
-  const auth = await requireAdmin(req); if (auth.error) return auth.error;
+  const auth = await requireAdmin(req);
+  if (auth.error) return auth.error;
+  const supabaseAdmin = getSupabaseAdmin();
   const [{ count, error }, { data: settings, error: settingsError }] = await Promise.all([
     supabaseAdmin.from("contacts").select("id", { count: "exact", head: true }),
     supabaseAdmin.from("app_settings").select("*").eq("id", 1).single()

@@ -1,8 +1,9 @@
 import { NextRequest, NextResponse } from "next/server";
-import { supabaseAdmin } from "@/lib/supabaseAdmin";
+import { getSupabaseAdmin } from "@/lib/supabaseAdmin";
 import { cleanName, cleanPhone } from "@/lib/validation";
 
 export const dynamic = "force-dynamic";
+
 export async function POST(req: NextRequest) {
   try {
     const body = await req.json();
@@ -12,6 +13,7 @@ export async function POST(req: NextRequest) {
     if (!phone) return NextResponse.json({ message: "Namba lazima iwe na tarakimu 9 na ianze na 6 au 7." }, { status: 400 });
     if (body.consent !== true) return NextResponse.json({ message: "Lazima ukubali masharti ya matumizi ya taarifa." }, { status: 400 });
 
+    const supabaseAdmin = getSupabaseAdmin();
     const forwarded = req.headers.get("x-forwarded-for")?.split(",")[0]?.trim() || "unknown";
     const { data, error } = await supabaseAdmin.rpc("register_contact", {
       p_name: name, p_phone: phone, p_ip_hint: forwarded.slice(0, 64)
