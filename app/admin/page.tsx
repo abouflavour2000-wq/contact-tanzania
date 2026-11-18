@@ -1,5 +1,6 @@
 "use client";
-import { FormEvent, useEffect, useState } from "react";
+import Link from "next/link";
+import { FormEvent, useCallback, useEffect, useState } from "react";
 import { supabaseBrowser } from "@/lib/supabaseBrowser";
 
 type Summary = { total: number; remaining: number; settings: { registration_open: boolean; whatsapp_group_link: string | null } };
@@ -14,23 +15,60 @@ export default function AdminPage() {
   async function api(path: string, init: RequestInit = {}) {
     return fetch(path, { ...init, headers: { ...(init.headers || {}), Authorization: `Bearer ${sessionToken}`, ...(init.body ? { "Content-Type": "application/json" } : {}) } });
   }
-  async function load(token = sessionToken) {
+
+  const load = useCallback(async (token: string, query: string) => {
     const headers = { Authorization: `Bearer ${token}` };
-    const [s, c] = await Promise.all([fetch("/api/admin/summary", { headers }), fetch(`/api/admin/contacts?search=${encodeURIComponent(search)}`, { headers })]);
-    if (s.status === 401 || s.status === 403) { setSessionToken(""); setSummary(null); setNotice("Session imeisha au akaunti hii si admin."); return; }
-    const sd = await s.json(); const cd = await c.json();
-    if (s.ok) { setSummary(sd); setGroupLink(sd.settings.whatsapp_group_link || ""); }
+
+    const [s, c] = await Promise.all([
+      fetch("/api/admin/summary", { headers }),
+      fetch(`/api/admin/contacts?search=${encodeURIComponent(query)}`, { headers }),
+    ]);
+
+    if (s.status === 401 || s.status === 403) {
+      setSessionToken("");
+      setSummary(null);
+      setNotice("Session imeisha au akaunti hii si admin.");
+      return;
+    }
+
+    const sd = await s.json();
+    const cd = await c.json();
+
+    if (s.ok) {
+      setSummary(sd);
+      setGroupLink(sd.settings.whatsapp_group_link || "");
+    }
+
     if (c.ok) setContacts(cd.contacts || []);
-  }
+  }, []);
+
   useEffect(() => {
     const client = supabaseBrowser();
-    client.auth.getSession().then(({ data }) => { const token = data.session?.access_token; if (token) { setSessionToken(token); load(token); } });
+    client.auth.getSession().then(({ data }) => {
+      const token = data.session?.access_token;
+      if (token) {
+        setSessionToken(token);
+        void load(token, "");
+      }
+    });
     const { data: listener } = client.auth.onAuthStateChange((_event, session) => {
-      const token = session?.access_token || ""; setSessionToken(token); if (token) load(token); else setSummary(null);
+      const token = session?.access_token || "";
+      setSessionToken(token);
+      if (token) void load(token, "");
+      else setSummary(null);
     });
     return () => listener.subscription.unsubscribe();
-  }, []);
-  useEffect(() => { if (sessionToken) { const t = setTimeout(() => load(), 250); return () => clearTimeout(t); } }, [search, sessionToken]);
+  }, [load]);
+
+  useEffect(() => {
+    if (!sessionToken) return;
+
+    const t = setTimeout(() => {
+      void load(sessionToken, search);
+    }, 250);
+
+    return () => clearTimeout(t);
+  }, [search, sessionToken, load]);
 
   async function login(e: FormEvent) {
     e.preventDefault(); setBusy(true); setNotice("");
@@ -41,18 +79,18 @@ export default function AdminPage() {
   async function saveSettings() {
     setBusy(true); setNotice("");
     const res = await api("/api/admin/settings", { method: "PATCH", body: JSON.stringify({ groupLink, registrationOpen: summary?.settings.registration_open }) });
-    const data = await res.json(); setNotice(res.ok ? "Mipangilio imehifadhiwa." : data.message); await load(); setBusy(false);
+    const data = await res.json(); setNotice(res.ok ? "Mipangilio imehifadhiwa." : data.message); await load(sessionToken, search); setBusy(false);
   }
   async function toggleRegistration() {
     if (!summary) return;
     setBusy(true);
     const res = await api("/api/admin/settings", { method: "PATCH", body: JSON.stringify({ registrationOpen: !summary.settings.registration_open }) });
-    const data = await res.json(); setNotice(res.ok ? "Hali ya usajili imebadilishwa." : data.message); await load(); setBusy(false);
+    const data = await res.json(); setNotice(res.ok ? "Hali ya usajili imebadilishwa." : data.message); await load(sessionToken, search); setBusy(false);
   }
   async function logout() { await supabaseBrowser().auth.signOut(); setSessionToken(""); setSummary(null); setContacts([]); }
 
   if (!sessionToken || !summary) return <main className="min-h-screen px-4 py-12"><div className="mx-auto max-w-md rounded-2xl border border-green-900 bg-[#0a1c10] p-7">
-    <a href="/" className="text-sm text-green-400">← Rudi mwanzo</a><h1 className="mt-5 text-2xl font-black text-green-400">ADMIN LOGIN</h1>
+    <Link href="/" className="text-sm text-green-400">← Rudi mwanzo</Link><h1 className="mt-5 text-2xl font-black text-green-400">ADMIN LOGIN</h1>
     <p className="mt-2 text-sm text-slate-400">Ingia kwa akaunti iliyoidhinishwa na ADMIN_EMAIL.</p>
     <form onSubmit={login} className="mt-6 space-y-4">
       <input required type="email" value={email} onChange={e => setEmail(e.target.value)} placeholder="Admin email" className="w-full rounded-lg border border-green-900 bg-[#051109] p-3" />
@@ -62,12 +100,12 @@ export default function AdminPage() {
   </div></main>;
 
   return <main className="min-h-screen px-4 py-8"><div className="mx-auto max-w-6xl">
-    <header className="mb-7 flex flex-wrap items-center justify-between gap-4"><div><a href="/" className="text-sm text-green-400">← Tovuti</a><h1 className="mt-2 text-3xl font-black text-green-400">TANZANIA CONTACTS</h1><p className="text-slate-400">Admin Dashboard</p></div><button onClick={logout} className="rounded-lg border border-green-800 px-4 py-2 text-sm">Toka</button></header>
+    <header className="mb-7 flex flex-wrap items-center justify-between gap-4"><div><Link href="/" className="text-sm text-green-400">← Tovuti</Link><h1 className="mt-2 text-3xl font-black text-green-400">TANZANIA CONTACTS</h1><p className="text-slate-400">Admin Dashboard</p></div><button onClick={logout} className="rounded-lg border border-green-800 px-4 py-2 text-sm">Toka</button></header>
     <div className="grid gap-4 sm:grid-cols-3">
       <Stat title="WASHIRIKI" value={`${summary.total} / 1000`} /><Stat title="NAFASI ZILIZOBAKI" value={`${summary.remaining}`} /><Stat title="HALI YA USAJILI" value={summary.settings.registration_open && summary.total < 1000 ? "WAZI" : "IMEFUNGWA"} />
     </div>
     <section className="mt-6 grid gap-5 rounded-2xl border border-green-900 bg-[#0a1c10] p-5 md:grid-cols-2">
-      <div><h2 className="mb-3 text-lg font-bold">Mipangilio</h2><label className="block text-sm text-slate-300">WhatsApp Group Invite Link<input value={groupLink} onChange={e => setGroupLink(e.target.value)} placeholder="https://chat.whatsapp.com/..." className="mt-2 w-full rounded-lg border border-green-900 bg-[#051109] p-3" /></label><div className="mt-4 flex flex-wrap gap-3"><button onClick={saveSettings} disabled={busy} className="rounded-lg bg-green-500 px-4 py-2 font-bold text-black">Hifadhi link</button><button onClick={toggleRegistration} disabled={busy || summary.total >= 1000 && summary.settings.registration_open} className="rounded-lg border border-green-700 px-4 py-2">{summary.settings.registration_open ? "Funga usajili" : "Fungua usajili"}</button></div></div>
+      <div><h2 className="mb-3 text-lg font-bold">Mipangilio</h2><label className="block text-sm text-slate-300">WhatsApp Group Invite Link<input value={groupLink} onChange={e => setGroupLink(e.target.value)} placeholder="https://chat.whatsapp.com/..." className="mt-2 w-full rounded-lg border border-green-900 bg-[#051109] p-3" /></label><div className="mt-4 flex flex-wrap gap-3"><button onClick={saveSettings} disabled={busy} className="rounded-lg bg-green-500 px-4 py-2 font-bold text-black">Hifadhi link</button><button onClick={toggleRegistration} disabled={busy || (summary.total >= 1000 && summary.settings.registration_open)} className="rounded-lg border border-green-700 px-4 py-2">{summary.settings.registration_open ? "Funga usajili" : "Fungua usajili"}</button></div></div>
       <div><h2 className="mb-3 text-lg font-bold">Export contacts</h2><p className="text-sm text-slate-400">Pakua majina na namba za washiriki wote waliojisajili. Faili ni la VCF kwa simu.</p><a href="#" onClick={async e => { e.preventDefault(); const r = await api("/api/admin/export"); if (!r.ok) { setNotice("Imeshindikana kupakua faili."); return; } const blob = await r.blob(); const url = URL.createObjectURL(blob); const a = document.createElement("a"); a.href = url; a.download = "Tanzania-Contacts.vcf"; a.click(); URL.revokeObjectURL(url); }} className="mt-4 inline-block rounded-lg bg-green-500 px-4 py-3 font-bold text-black">PAKUA Tanzania-Contacts.vcf</a></div>
     </section>
     {notice && <p role="status" className="mt-4 rounded-lg bg-slate-900 p-3 text-sm text-green-300">{notice}</p>}
